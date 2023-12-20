@@ -24,91 +24,42 @@ jobs:
           token: ${{ secrets.ACCESS_TOKEN }}
           ref: ${{ env.BRANCH }}
       
-      - name: Install Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
-
-      - uses: pnpm/action-setup@v2.0.1
-        name: Install pnpm
-        id: pnpm-install
-        with:
-          version: 8.6.0
-          run_install: false
-
-      - name: Get pnpm store directory
-        id: pnpm-cache
+      - name: Configure SSH
         run: |
-          echo "::set-output name=pnpm_cache_dir::$(pnpm store path)"
-
-      - uses: actions/cache@v3
-        name: Setup pnpm cache
-        with:
-          path: ${{ steps.pnpm-cache.outputs.pnpm_cache_dir }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm -v && pnpm install --no-frozen-lockfile
-
-      - name: 项目构建
-        run: export BUILD_BRANCH=${{ secrets.BRANCH }} && pnpm run ${{ env.RUN_COMMAND }}
-
-      - name: Get current time
-        uses: 1466587594/get-current-time@v2
-        id: current-time
-        with:
-          format: YYMMDDHHmm
-          utcOffset: '+08:00'
-
-      - name: Use current time
+          mkdir -p ~/.ssh/
+          echo "$SSH_KEY" > ~/.ssh/tcloud.key
+          chmod 600 ~/.ssh/tcloud.key
+          cat >>~/.ssh/config <<END
+          Host tcloud
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/tcloud.key
+            StrictHostKeyChecking no
+          END
         env:
-          F_TIME: '${{ steps.current-time.outputs.formattedTime }}'
-        run: echo "NOW=$F_TIME" >> $GITHUB_ENV
-
-      - name: 上传除html以外的静态资源到腾讯云COS另外的桶
-        uses: zkqiang/tencent-cos-action@v0.1.0
-        with:
-          args: upload -rs .${{ env.APP_PATH }}/dist/ / --ignore *.html
-          secret_id: ${{ secrets.OSS_SECRET_ID }}
-          secret_key: ${{ secrets.OSS_SECRET_KEY }}
-          bucket: ${{ secrets.OSS_ASSETS_BUCKET }}
-          region: ${{ secrets.OSS_REGION }}
-      
-      - name: 上传Html到腾讯云COS
-        uses: zkqiang/tencent-cos-action@v0.1.0
-        with:
-          args: upload .${{ env.APP_PATH }}/dist/index.html /${{ env.REPOSITORY }}${{ env.APP_PATH }}/${{ env.BRANCH }}/default/index.html
-          secret_id: ${{ secrets.OSS_SECRET_ID }}
-          secret_key: ${{ secrets.OSS_SECRET_KEY }}
-          bucket: ${{ secrets.OSS_BUCKET }}
-          region: ${{ secrets.OSS_REGION }}
-
-
-      - name: 上传html到腾讯云COS-备份版本
-        uses: zkqiang/tencent-cos-action@v0.1.0
-        with:
-          args: upload .${{ env.APP_PATH }}/dist/index.html /${{ env.REPOSITORY }}${{ env.APP_PATH }}/${{ env.BRANCH }}/${{ env.NOW }}/index.html 
-          secret_id: ${{ secrets.OSS_SECRET_ID }}
-          secret_key: ${{ secrets.OSS_SECRET_KEY }}
-          bucket: ${{ secrets.OSS_BUCKET }}
-          region: ${{ secrets.OSS_REGION }}
-      
+          SSH_USER: ${{ secrets.SERVER_USERNAME }}
+          SSH_KEY: ${{ secrets.SERVER_SSH_PRIV_KEY }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
+      - name: 运行命令
+        run: |
+          ssh -q tcloud <<EOF
+            ${{ env.RUN_COMMAND }}
+          EOF
+  
 
       - name: 构建成功消息
         if: ${{ success() }}
         uses: threfo/work-wechat-msg@main
         with:
           botKey: ${{ secrets.WORK_WECHAT_GITHUB_ROBOT_KEY }}
-          content: 🎉 项目${{ env.REPOSITORY }}，分支${{ env.BRANCH }}, 构建命令${{ env.RUN_COMMAND }}，上传到/${{ env.REPOSITORY }}${{ env.APP_PATH }}/${{ env.SYNC_BRANCH }} 构建成功。--- Github Actions
+          content: 🎉 项目${{ env.REPOSITORY }}，分支${{ env.BRANCH }}, 构建命令${{ env.RUN_COMMAND }} 构建成功。--- Github Actions
         
       - name: 构建失败消息
         if: ${{ failure() }}
         uses: threfo/work-wechat-msg@main
         with:
           botKey: ${{ secrets.WORK_WECHAT_GITHUB_ROBOT_KEY }}
-          content: ❌ 项目${{ env.REPOSITORY }}，分支${{ env.BRANCH }}, 构建命令${{ env.RUN_COMMAND }}，上传到/${{ env.REPOSITORY }}${{ env.APP_PATH }}/${{ env.SYNC_BRANCH }} 构建失败。--- Github Actions
+          content: ❌ 项目${{ env.REPOSITORY }}，分支${{ env.BRANCH }}, 构建命令${{ env.RUN_COMMAND }} 构建失败。--- Github Actions
         
   
 
