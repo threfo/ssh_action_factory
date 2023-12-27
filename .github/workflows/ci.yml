@@ -42,7 +42,7 @@ jobs:
           SSH_HOST: ${{ secrets.SERVER_HOST }}
       - name: 运行命令
         run: |
-          ssh -q tcloud <<EOF
+          ssh tcloud <<EOF
             ${{ env.RUN_COMMAND }}
           EOF
   
